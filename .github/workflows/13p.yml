@@ -97,7 +97,7 @@ jobs:
           patch -p1 -F 3 < lz4k_oplus.patch || true
           echo '完成lz4k_oplus补丁'
           
-          CONFIG_FILE="$GITHUB_WORKSPACE/kernel_workspace/arch/arm64/configs/gki_defconfig"
+          CONFIG_FILE="$GITHUB_WORKSPACE/kernel_workspace/android_kernel/arch/arm64/configs/gki_defconfig"
 
               # sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/g' "$CONFIG_FILE"
           if grep -q "CONFIG_ZSMALLOC" "$CONFIG_FILE"; then
@@ -179,7 +179,7 @@ jobs:
             echo "字符串为空"
           fi
 
-          DEFCONFIG="$GITHUB_WORKSPACE/kernel_workspace/arch/arm64/configs/gki_defconfig"
+          DEFCONFIG="$GITHUB_WORKSPACE/kernel_workspace/android_kernel/arch/arm64/configs/gki_defconfig"
           echo "当前配置为 $DEFCONFIG"
           # echo '修改defconfig'
           # echo "CONFIG_MODULES=y" >> ./arch/arm64/configs/$DEFCONFIG
