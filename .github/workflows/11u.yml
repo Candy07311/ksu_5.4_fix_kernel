@@ -10,7 +10,7 @@ on:
       version:
         description: '自定义版本名（如perf-xxx）/可为空（则为n0kernel）'
         required: false
-        drfault: jn-5.4.247
+        default: jn-5.4.247
         type: string
 
 jobs:
