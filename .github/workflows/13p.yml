@@ -180,7 +180,7 @@ jobs:
             echo "字符串为空"
           fi
 
-          DEFCONFIG="$GITHUB_WORKSPACE/kernel_workspace/android_kernel/arch/argki_defconfig"
+          DEFCONFIG="gki_defconfig"
           echo "当前配置为 $DEFCONFIG"
           # echo '修改defconfig'
           # echo "CONFIG_MODULES=y" >> ./arch/arm64/configs/$DEFCONFIG
