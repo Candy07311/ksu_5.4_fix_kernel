@@ -110,7 +110,7 @@ jobs:
                 
           sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
 
-          rm "$GITHUB_WORKSPACE/kernel_workspace/android/gki_aarch64_modules"
+          rm "$GITHUB_WORKSPACE/kernel_workspace/android/gki_aarch64_modules" || true
           touch "$GITHUB_WORKSPACE/kernel_workspace/android/gki_aarch64_modules"
           echo '5.15:已修复zram&zsmalloc'
 
