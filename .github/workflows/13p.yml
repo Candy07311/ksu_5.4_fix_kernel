@@ -35,6 +35,7 @@ jobs:
 
       - name: 1.下载编译工具
         run: |
+          echo "$(ls -a $GITHUB_WORKSPACE/kernel_workspace/android_kernel/arch/arm64)"
           mkdir -p $GITHUB_WORKSPACE/kernel_workspace
           cd $GITHUB_WORKSPACE/kernel_workspace
           wget -q https://github.com/ZyCromerZ/Clang/releases/download/19.0.0git-20240125-release/Clang-19.0.0git-20240125.tar.gz
