@@ -1,0 +1,186 @@
+name: Build 11u MI Kernel
+on:
+  workflow_dispatch:
+    inputs:
+      susfs:
+        description: '是否集成SUSFS'
+        required: true
+        default: true
+        type: boolean
+      version:
+        description: '自定义版本名（如perf-xxx）/可为空（则为n0kernel）'
+        required: false
+        drfault: jn-5.4.247
+        type: string
+
+jobs:
+  build_job:
+    runs-on: ubuntu-22.04
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CI: "false"
+    steps:
+
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          swap-size-mb: 4096
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      - name: 1.下载编译工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python2 python3 libelf-dev dwarves
+          mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+          cd $GITHUB_WORKSPACE/kernel_workspace
+          wget -q https://github.com/ZyCromerZ/Clang/releases/download/21.0.0git-20250512-release/Clang-21.0.0git-20250512.tar.gz
+          mkdir -p clang
+          tar -xzf Clang-21.0.0git-20250512.tar.gz -C clang
+          
+
+      - name: 2.克隆源码与补丁
+        run: |
+          cd $GITHUB_WORKSPACE/kernel_workspace
+          git clone https://github.com/EndCredits/android_kernel_xiaomi_sm8350-miui.git -b hyper-14 --depth=1 android_kernel
+          #工具
+          git clone https://github.com/zzh20188/AUTO_BUILD.git src
+          #sukisu kpm 工具
+          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          #susfs
+          git clone https://github.com/ShirkNeko/susfs4ksu.git -b kernel-5.4
+
+      - name: 3.安装SukiSU
+        run: |
+          cd $GITHUB_WORKSPACE/kernel_workspace/android_kernel
+          curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-dev
+
+      - name: 4.应用susfs补丁
+        run: |
+          if [ ${{ inputs.susfs }} = true ]; then
+            echo "开始集成susfs"
+            cd $GITHUB_WORKSPACE/kernel_workspace/android_kernel
+            
+            echo "复制susfs/kernel_patches/fs/* 的内容"
+            cp $GITHUB_WORKSPACE/kernel_workspace/susfs4ksu/kernel_patches/fs/* ./fs/
+            echo "复制susfs/kernel_patches/include/linux/* 的内容"
+            cp $GITHUB_WORKSPACE/kernel_workspace/susfs4ksu/kernel_patches/include/linux/* ./include/linux/
+            echo "复制susfs内核源码补丁"
+            cp $GITHUB_WORKSPACE/kernel_workspace/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-5.4.patch .
+            echo "执行susfs补丁"
+            patch -p1 < 50_add_susfs_in_kernel-5.4.patch || true
+            # echo "修复"
+            # patch -p1 < after_patch_fix.patch            
+          else
+            echo "跳过集成susfs"
+          fi
+          
+          echo "嵌入新hook"
+          echo "Applying hooks for SukiSU..."
+          cp $GITHUB_WORKSPACE/kernel_workspace/SukiSU_patch/hooks/syscall_hooks.patch .
+          patch -p1 -F 3 < syscall_hooks.patch
+          
+          
+          CONFIG_FILE="$GITHUB_WORKSPACE/kernel_workspace/android_kernel/arch/arm64/configs/vendor/lahaina-qgki_defconfig"
+
+              # sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/g' "$CONFIG_FILE"
+          if grep -q "CONFIG_ZSMALLOC" "$CONFIG_FILE"; then
+              echo "提示：文件 $CONFIG_FILE 包含字符串 CONFIG_ZSMALLOC。"
+              sed -i 's/CONFIG_ZSMALLOC=m/CONFIG_ZSMALLOC=y/g' "$CONFIG_FILE"
+          else
+              echo "警告：文件 $CONFIG_FILE 不包含字符串 CONFIG_ZSMALLOC。"
+              echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
+          fi
+                
+          sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
+
+          
+
+          
+         
+          echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
+
+          echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CONFIG_FILE"
+          
+          # Add SUSFS configuration settings
+          echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
+          
+          # Add additional tmpfs config setting
+          echo "CONFIG_TMPFS_XATTR=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
+
+          # Add additional config setting
+          echo "CONFIG_IP_NF_TARGET_TTL=y" >> "$CONFIG_FILE"
+          echo "CONFIG_IP6_NF_TARGET_HL=y" >> "$CONFIG_FILE"
+          echo "CONFIG_IP6_NF_MATCH_HL=y" >> "$CONFIG_FILE"
+
+          # Remove check_defconfig
+          sed -i 's/check_defconfig//' ./build.config.gki
+          
+          sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' ./BUILD.bazel
+            rm -rf ./android/abi_gki_protected_exports_*
+            #sed -i "/stable_scmversion_cmd/s/-maybe-dirty//g" ./build/kernel/kleaf/impl/stamp.bzl
+            sed -E -i '/^CONFIG_LOCALVERSION=/ s/(.*)"$/\1"/' "$CONFIG_FILE"
+        
+      - name: 6.开始构建
+        run: |
+          export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang/bin:$PATH
+          echo "Updated PATH: $PATH"
+          clang --version
+          
+          cd $GITHUB_WORKSPACE/kernel_workspace/android_kernel
+          # 自定义版本
+          if [ ! -z ${{ inputs.version }} ]; then
+            echo "不为空"
+            sed -i 's/ -dirty//g' ./scripts/setlocalversion
+            sed -i '$s|echo "\$res"|echo "-${{ inputs.version }}"|' ./scripts/setlocalversion
+          else
+            echo "字符串为空"
+          fi
+
+          DEFCONFIG="vendor/lahaina-qgki_defconfig"
+          echo "当前配置为 $DEFCONFIG"
+          # echo '修改defconfig'
+          # echo "CONFIG_MODULES=y" >> ./arch/arm64/configs/$DEFCONFIG
+          # echo "CONFIG_KPROBES=n" >> ./arch/arm64/configs/$DEFCONFIG
+
+          # sed -i '2s/check_defconfig//' ./build.config.gki
+
+          make -j$(nproc --all) CC=clang O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 LD=ld.lld CROSS_COMPILE=aarch64-buildroot-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-androideabi- $DEFCONFIG
+          make -j$(nproc --all) CC=clang O=out ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 LD=ld.lld CROSS_COMPILE=aarch64-linux-android- CROSS_COMPILE_ARM32=arm-linux-androideabi-    
+      
+      - name: 7.查看成果
+        run: |
+            cd $GITHUB_WORKSPACE/kernel_workspace/android_kernel/out/arch/arm64/boot
+            ls
+            strings Image | grep "Linux version"
+            cp Image $GITHUB_WORKSPACE/kernel_workspace/src/Anykernel/
+
+      - name: 8.上传刷入包
+        uses: actions/upload-artifact@v4
+        with:
+          name: KernelSU_NEXT_SUSFS_13p
+          path: kernel_workspace/src/Anykernel/*
+          retention-days: 3
